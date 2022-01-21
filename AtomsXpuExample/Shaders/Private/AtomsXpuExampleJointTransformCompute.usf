@@ -1,0 +1,182 @@
+#include "/Engine/Private/Common.ush"
+#include "/Plugins/AtomsUnreal/Private/AtomsGPUComputeUtils.ush"
+
+RWBuffer<float4> CurrentBoneMatrices;
+Buffer<float4> BindInverseMatrices;
+Buffer<int> ParentBoneIndices;
+Buffer<float> TransformData;
+Buffer<float4> AgentsData;
+float3x4 ParentTransform;
+uint NumBones;
+uint NumInstances;
+uint AgentOffset;
+uint TransformDataStride;
+uint SimulateOnlyActiveAgents;
+
+[numthreads(THREADGROUP_SIZE, 1, 1)]
+
+void MainComputeShader
+(uint3 GroupId : SV_GroupID, uint3 GroupThreadId : SV_GroupThreadID, uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint InputStart = GroupId.x * THREADGROUP_SIZE;
+	uint Thread = GroupThreadId.x;
+
+	uint AgentID = InputStart + Thread;
+	if (AgentID >= NumInstances)
+		return;
+    
+	AgentID = AgentID + AgentOffset;
+
+    if (SimulateOnlyActiveAgents == 1 && IsAgentCulled(AgentsData, AgentID))
+    {
+        return;
+    }
+	
+	float4 translation = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+	float4 rotation = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	float3 scale = float3(0.0f, 0.0f, 0.0f);
+	float weight = 0.0f;
+	uint offset = 0;
+	uint worldSpace = 0;
+	uint mode = 0;
+	uint BoneId = 0;
+	uint PoseId = 0;
+
+	uint TransformOffset = AgentID * TransformDataStride;
+
+	PoseId = uint(round(TransformData[TransformOffset]));
+
+	if (PoseId < 0)
+		return;
+
+	BoneId = uint(round(TransformData[TransformOffset + 1]));
+	if (BoneId < 0 || BoneId >= NumBones)
+		return;
+
+	float4x4 ParentMtx = Matraix34ToMatrix44(ParentTransform);
+
+	translation.x = TransformData[TransformOffset + 2];
+	translation.y = TransformData[TransformOffset + 3];
+	translation.z = TransformData[TransformOffset + 4];
+	rotation.x = TransformData[TransformOffset + 5];
+	rotation.y = TransformData[TransformOffset + 6];
+	rotation.z = TransformData[TransformOffset + 7];
+	rotation.w = TransformData[TransformOffset + 8];
+	scale.x = TransformData[TransformOffset + 9];
+	scale.y = TransformData[TransformOffset + 10];
+	scale.z = TransformData[TransformOffset + 11];
+	weight = TransformData[TransformOffset + 12];
+	translation.w = scale.x;
+	offset = uint(round(TransformData[TransformOffset + 13]));
+	worldSpace = uint(round(TransformData[TransformOffset + 14]));
+	mode = uint(round(TransformData[TransformOffset + 15]));
+
+
+	float4 JointClipTranslation = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	float4 JointClipRotation = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	GetJointPoseRST(CurrentBoneMatrices, NumBones, PoseId, BoneId, JointClipTranslation, JointClipRotation);
+	
+	if (worldSpace)
+	{
+		
+		float4x4 ParentMatrix = IdentityMatrix();
+		uint ParentJoint = uint(ParentBoneIndices[BoneId]);
+		if (ParentJoint >= 0 && ParentJoint < NumBones)
+		{
+			ParentMatrix = GetJointPoseWorldMatrix(ParentBoneIndices, CurrentBoneMatrices, NumBones, PoseId, ParentJoint);
+		}
+
+		ParentMatrix = mul(ParentMatrix, ParentMtx);
+
+		if (!offset)
+		{
+		    float4x4 zup = float4x4(
+				1.0f, 0.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, -1.0f, 0.0f,
+				0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 0.0f, 1.0f);
+	
+			float3 T = float3(0.0f, 0.0f, 0.0f);
+			float3 S = float3(1.0f, 1.0f, 1.0f);
+
+			float4x4 InWorldMatrix = BuildMatrix(translation, rotation);
+			InWorldMatrix = mul(InWorldMatrix, zup);
+			DecomposeMatrix(InWorldMatrix, T, rotation, S);
+			translation.xyz = T;
+			translation.w = S.x;
+			
+			float4x4 WorldMatrix = BuildMatrix(JointClipTranslation, JointClipRotation);
+			WorldMatrix = mul(WorldMatrix, ParentMatrix);
+			
+			DecomposeMatrix(WorldMatrix, T, JointClipRotation, S);
+			JointClipTranslation.xyz = T;
+			JointClipTranslation.w = S.x;
+
+			JointClipRotation = SlerpQuat(JointClipRotation, rotation, weight);
+			JointClipTranslation = translation * weight + JointClipTranslation * (1.0 - weight);
+
+			WorldMatrix = BuildMatrix(JointClipTranslation, JointClipRotation);
+			
+			//transform in local
+			float4x4 ParentInvMatrix = MatrixInverse(ParentMatrix);
+			WorldMatrix = mul(WorldMatrix, ParentInvMatrix);
+			DecomposeMatrix(WorldMatrix, T, JointClipRotation, S);
+			JointClipTranslation.xyz = T;
+			JointClipTranslation.w = S.x;
+
+			
+		}
+		else
+		{
+			float3 T = float3(0.0f, 0.0f, 0.0f);
+			float3 S = float3(1.0f, 1.0f, 1.0f);
+
+			float4 currTranslation = float4(0.0f, 0.0f, 0.0f, 0.0f);
+			float4 currRotation = float4(0.0f, 0.0f, 0.0f, 1.0f);
+			float4 quatTmp = SlerpQuat(currRotation, rotation, weight);
+			float currScale = 1.0;
+			currScale = translation.w * (currScale * (1.0 - weight) + scale.x * weight);
+
+			translation = currTranslation * (1.0 - weight) + translation * weight;
+			translation.w = currScale;
+			rotation = quatTmp;
+			float4x4 InWorldMatrix = BuildMatrix(translation, rotation);
+
+
+			float4x4 WorldMatrix = BuildMatrix(JointClipTranslation, JointClipRotation);
+			WorldMatrix = mul(WorldMatrix, ParentMatrix);
+			WorldMatrix = mul(InWorldMatrix, WorldMatrix);
+
+			//transform in local
+			float4x4 ParentInvMatrix = MatrixInverse(ParentMatrix);
+			WorldMatrix = mul(WorldMatrix, ParentInvMatrix);
+			DecomposeMatrix(WorldMatrix, T, JointClipRotation, S);
+			JointClipTranslation.xyz = T;
+			JointClipTranslation.w = S.x;
+		}
+		
+	}
+	else
+	{
+		if (!offset)
+		{
+			JointClipRotation = SlerpQuat(JointClipRotation, rotation, weight);
+			JointClipTranslation = translation * weight + JointClipTranslation * (1.0 - weight);
+		}
+		else
+		{
+			float4 currTranslation = float4(0.0f, 0.0f, 0.0f, 0.0f);
+			float4 currRotation = float4(0.0f, 0.0f, 0.0f, 1.0f);
+			float4 quatTmp = SlerpQuat(currRotation, rotation, weight);
+			float currScale = 1.0;
+			currScale = JointClipTranslation.w * (currScale * (1.0 - weight) + scale.x * weight);
+
+			JointClipTranslation += currTranslation * (1.0 - weight) + translation * weight;
+			JointClipTranslation.w = currScale;
+			JointClipRotation = MultQuat(JointClipRotation, quatTmp);
+		}
+	}
+
+	SetJointPoseRST(CurrentBoneMatrices, NumBones, PoseId, BoneId, JointClipTranslation, JointClipRotation);
+
+}

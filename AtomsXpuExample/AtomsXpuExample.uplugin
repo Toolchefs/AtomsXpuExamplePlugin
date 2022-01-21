@@ -1,0 +1,58 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0.0",
+  "FriendlyName": "AtomsXpuExample",
+  "Description": "Atoms Crowd XPU Example",
+  "Category": "Crowd",
+  "CreatedBy": "Toolchefs LTD",
+  "CreatedByURL": "https://atoms.toolchefs.com",
+  "DocsURL": "https://toolchefs.atlassian.net/wiki/spaces/ASD/pages/296386740/Atoms+Realtime+AtomsUnreal",
+  "MarketplaceURL": "",
+  "SupportURL": "support@toolchefs.com",
+  "CanContainContent": false,
+  "IsBetaVersion": false,
+  "IsExperimentalVersion": false,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "AtomsXpuExampleShaders",
+      "Type": "Runtime",
+      "LoadingPhase": "PostConfigInit",
+      "WhitelistPlatforms": [
+        "Win64",
+        "Linux",
+        "LinuxAArch64",
+        "Android",
+        "Mac"
+      ]
+    },
+    {
+      "Name": "AtomsXpuExample",
+      "Type": "Runtime",
+      "LoadingPhase": "PreDefault",
+      "WhitelistPlatforms": [
+        "Win64",
+        "Linux",
+        "LinuxAArch64",
+        "Android",
+        "Mac"
+      ]
+    },
+    {
+      "Name": "AtomsXpuExampleEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit",
+      "WhitelistPlatforms": [
+        "Win64",
+        "Mac"
+      ]
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "AtomsUnreal",
+      "Enabled": true
+    }
+  ]
+}
