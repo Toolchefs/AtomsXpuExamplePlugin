@@ -3,8 +3,54 @@
 #include "RenderGraphUtils.h"
 #include "RenderGraphResources.h"
 #include "AtomsXpuExampleComputeShaders.h"
+#include "Rendering/SkeletalMeshInstancedFactory.h"
 #include "Components/AtomsAgentTypeComponent.h"
 #include "AtomsSettings.h"
+
+#if ENGINE_MAJOR_VERSION < 5
+
+BEGIN_SHADER_PARAMETER_STRUCT(FCopyBufferParameters, )
+RDG_BUFFER_ACCESS(Buffer, ERHIAccess::CopyDest)
+END_SHADER_PARAMETER_STRUCT()
+
+const void* GetInitialDataBuf(FRDGBuilder& GraphBuilder, const void* InitialData, uint64 InitialDataSize, ERDGInitialDataFlags InitialDataFlags)
+{
+	if ((InitialDataFlags & ERDGInitialDataFlags::NoCopy) != ERDGInitialDataFlags::NoCopy)
+	{
+		// Allocates memory for the lifetime of the pass, since execution is deferred.
+		void* InitialDataCopy = GraphBuilder.Alloc(InitialDataSize, 16);
+		FMemory::Memcpy(InitialDataCopy, InitialData, InitialDataSize);
+		return InitialDataCopy;
+	}
+
+	return InitialData;
+}
+
+
+void AddBufferUploadPass(FRDGBuilder& GraphBuilder, FRDGBufferRef Buffer, const void* InitialData, uint64 InitialDataSize, ERDGInitialDataFlags InitialDataFlags)
+{
+	check(Buffer);
+
+	const void* SourcePtr = GetInitialDataBuf(GraphBuilder, InitialData, InitialDataSize, InitialDataFlags);
+
+	FCopyBufferParameters* PassParameters = GraphBuilder.AllocParameters<FCopyBufferParameters>();
+	PassParameters->Buffer = Buffer;
+
+	//Buffer->SetNonTransient();
+
+	GraphBuilder.AddPass(
+		RDG_EVENT_NAME("BufferUpload(%s)", Buffer->Name),
+		PassParameters,
+		ERDGPassFlags::Copy,
+		[Buffer, SourcePtr, InitialDataSize](FRHICommandListImmediate& RHICmdList)
+	{
+		auto* RHIBuffer = Buffer->GetRHIVertexBuffer();
+		void* DestPtr = RHICmdList.LockVertexBuffer(RHIBuffer, 0, InitialDataSize, RLM_WriteOnly);
+		FMemory::Memcpy(DestPtr, SourcePtr, InitialDataSize);
+		RHICmdList.UnlockVertexBuffer(RHIBuffer);
+	});
+}
+#endif
 
 const int32 FAtomsXpuExampleJointTransformXPUComputeResources::Stride = 16;
 
@@ -151,7 +197,7 @@ void FAtomsXpuExampleJointTransformXPUCompute::Execute(
 			PassParameters->TransformDataStride = JointTransformResource->Stride;
 			PassParameters->CurrentBoneMatrices = WorldMatricesUAV;
 			PassParameters->ParentTransform = ParentMatrix;
-			PassParameters->AgentsData = RenderObject->AgentsDataBuffer->VertexBufferSRV();
+			PassParameters->AgentsData = RenderObject->AgentsDataBuffer[RenderObject->CurrentBuffer]->VertexBufferSRV();
 			PassParameters->SimulateOnlyActiveAgents = BonesData->SimulateOnlyActiveAgents;
 			const FIntVector GroupCounts = FComputeShaderUtils::GetGroupCount(PassParameters->NumInstances, 64);
 			if (PassParameters->TransformData)
@@ -267,7 +313,7 @@ void FAtomsXpuExampleJointTransformXPUDispatcher::Execute(FRHICommandListImmedia
 			PassParameters->TransformDataStride = PoseGPUComputeResources->Stride;
 			PassParameters->CurrentBoneMatrices = WorldMatricesUAV;
 			PassParameters->ParentTransform = ParentMatrix;
-			PassParameters->AgentsData = RenderObject->AgentsDataBuffer->VertexBufferSRV();
+			PassParameters->AgentsData = RenderObject->AgentsDataBuffer[RenderObject->CurrentBuffer]->VertexBufferSRV();
 			PassParameters->SimulateOnlyActiveAgents = BonesData->SimulateOnlyActiveAgents;
 			const FIntVector GroupCounts = FComputeShaderUtils::GetGroupCount(PassParameters->NumInstances, 64);
 			if (PassParameters->TransformData)

@@ -223,7 +223,7 @@ actively modifying the pose with an operator and not at the endFrame stage(i.e.S
 
 	virtual bool IsUsingGPUComputePose() const override;
 
-	virtual void UpdateGpuComputeData(class UAtomsAgentTypeComponent* AgentTypeComponent, struct FAgentTypePoseRenderData* AgentTypePoseRenderData, uint32 Index) override;
+	virtual void UpdateGpuComputeData(class UAtomsAgentTypeComponent* AgentTypeComponent, struct FAgentTypePoseRenderData* AgentTypePoseRenderData, uint32 Index, uint32& NumActivePerInstanceMetadata) override;
 
 private:
 

@@ -294,7 +294,8 @@ bool UAtomsXpuExampleJointTransform_BehaviourComponent::IsUsingGPUComputePose() 
 void UAtomsXpuExampleJointTransform_BehaviourComponent::UpdateGpuComputeData(
 	UAtomsAgentTypeComponent* AgentTypeComponent, 
 	FAgentTypePoseRenderData* AgentTypePoseRenderData, 
-	uint32 Index)
+	uint32 Index,
+	uint32& NumActivePerInstanceMetadata)
 {
 	if (!AgentTypeComponent || !AgentTypeComponent->AgentType)
 		return;
