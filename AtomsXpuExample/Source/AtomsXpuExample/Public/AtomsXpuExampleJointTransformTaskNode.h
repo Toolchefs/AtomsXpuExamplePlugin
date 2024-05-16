@@ -75,8 +75,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Properties")
 		FAtomsBehaviourTreeNodeBoolProperty worldSpace;
 
-
-
+	/** If active allocate for each agent the data for the gpu task.
+		* Activate this only if you have a lot of agents executing this node a t the same time. */
+	UPROPERTY(EditAnywhere, Category = "Properties")
+	bool preallocateMemory;
 };
 
 

@@ -1,4 +1,5 @@
 #include "AtomsXpuExampleJointTransformTaskNode.h"
+#include "AtomsXpuExampleDispatcher.h"
 #include <Atoms/BehaviourTree/BehaviourTreeContext.h>
 #include <Atoms/BehaviourTree/BehaviourTree.h>
 #include <AtomsCore/Metadata/StringMetadata.h>
@@ -87,6 +88,7 @@ Atoms::Behaviour* UAtomsXpuExampleJointTransformTaskNode::GenerateAtomsBehaviour
 	AtomsXpuExampleJointTransformTaskNodeWrapper* behaviour = new AtomsXpuExampleJointTransformTaskNodeWrapper();
 	behaviour->AgentGroup = Cast<AAtomsAgentGroup>(Actor);
 	behaviour->Component = Cast<UBehaviourTree_BehaviourComponent>(Component);
+	behaviour->setPreallocateMemory(preallocateMemory);
 	return behaviour;
 }
 
@@ -116,7 +118,7 @@ AtomsXpuExampleJointTransformTaskNodeWrapper::~AtomsXpuExampleJointTransformTask
 
 const char* AtomsXpuExampleJointTransformTaskNodeWrapper::staticTypeName()
 {
-	return "JointTransformXPU";
+	return "AtomsXpuExampleJointTransform";
 }
 
 const char* AtomsXpuExampleJointTransformTaskNodeWrapper::typeName() const
@@ -163,7 +165,6 @@ AtomsCore::Euler::Order AtomsXpuExampleJointTransformTaskNodeWrapper::convertRot
 	return returnOrder;
 }
 
-
 void AtomsXpuExampleJointTransformTaskNodeWrapper::initialize(Atoms::BehaviourTreeContext* context, Atoms::Behaviour::State* data)
 {
 	data->status = Atoms::Behaviour::Status::FAILURE;
@@ -173,6 +174,7 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::initialize(Atoms::BehaviourTr
 		context->agent->lock();
 	}
 
+	//auto& id = context->getBlackboardValue(agentId);
 	auto& jointNameValue = context->getBlackboardValue(jointName);
 	auto& translationValue = context->getBlackboardValue(translation);
 	auto& rotationValue = context->getBlackboardValue(rotation);
@@ -195,7 +197,7 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::initialize(Atoms::BehaviourTr
 			std::string* nodeNamePtr = context->allocateMemory<std::string>();
 			data->ptrValue = nodeNamePtr;
 			*nodeNamePtr = "gpu";
-			
+			/*
 			FScopeLock ScopeLock(&Component->GpuTaskMutex);
 			auto bufferData = Component->RegisterGPUTask(this, context);
 			check(bufferData.size() == 16);
@@ -220,7 +222,7 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::initialize(Atoms::BehaviourTr
 			bufferData[13] = offsetValue;
 			bufferData[14] = worldSpaceValue;
 			bufferData[15] = modeValue;
-			
+			*/
 		}
 
 		if (lock)
@@ -359,8 +361,6 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::update(Atoms::BehaviourTreeCo
 	std::string* namePtr = reinterpret_cast<std::string*>(data->ptrValue);
 	if (Component.IsValid() && namePtr && *namePtr == "gpu")
 	{
-		FScopeLock ScopeLock(&Component->GpuTaskMutex);
-		auto bufferData = Component->RegisterGPUTask(this, context);
 		// fill the buffer
 		auto JointId = context->agent->agentType()->skeleton().jointId(jointNameValue);
 
@@ -368,23 +368,47 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::update(Atoms::BehaviourTreeCo
 		AtomsCore::Quaternion quatTmp = erotation.toQuat();
 		//quatTmp.invert();
 		// fill the buffer
-		bufferData[0] = context->agent->groupId()->value();
-		bufferData[1] = JointId;
-		bufferData[2] = translationValue.x;
-		bufferData[3] = -translationValue.y;
-		bufferData[4] = translationValue.z;
-		bufferData[5] = quatTmp.v.x;
-		bufferData[6] = -quatTmp.v.y;
-		bufferData[7] = quatTmp.v.z;
-		bufferData[8] = -quatTmp.r;
-		bufferData[9] = scaleValue.x;
-		bufferData[10] = scaleValue.y;
-		bufferData[11] = scaleValue.z;
-		bufferData[12] = weightValue;
-		bufferData[13] = offsetValue;
-		bufferData[14] = worldSpaceValue;
-		bufferData[15] = modeValue;
-
+		if (needPreallocatedMemory())
+		{
+			auto bufferData = Component->RegisterGPUTask(this, context);
+			bufferData[0] = context->agent->groupId()->value();
+			bufferData[1] = JointId;
+			bufferData[2] = translationValue.x;
+			bufferData[3] = -translationValue.y;
+			bufferData[4] = translationValue.z;
+			bufferData[5] = quatTmp.v.x;
+			bufferData[6] = -quatTmp.v.y;
+			bufferData[7] = quatTmp.v.z;
+			bufferData[8] = -quatTmp.r;
+			bufferData[9] = scaleValue.x;
+			bufferData[10] = scaleValue.y;
+			bufferData[11] = scaleValue.z;
+			bufferData[12] = weightValue;
+			bufferData[13] = offsetValue;
+			bufferData[14] = worldSpaceValue;
+			bufferData[15] = modeValue;
+		}
+		else
+		{
+			FScopeLock ScopeLock(&Component->GpuTaskMutex);
+			auto bufferData = Component->RegisterGPUTask(this, context);
+			bufferData[0] = context->agent->groupId()->value();
+			bufferData[1] = JointId;
+			bufferData[2] = translationValue.x;
+			bufferData[3] = -translationValue.y;
+			bufferData[4] = translationValue.z;
+			bufferData[5] = quatTmp.v.x;
+			bufferData[6] = -quatTmp.v.y;
+			bufferData[7] = quatTmp.v.z;
+			bufferData[8] = -quatTmp.r;
+			bufferData[9] = scaleValue.x;
+			bufferData[10] = scaleValue.y;
+			bufferData[11] = scaleValue.z;
+			bufferData[12] = weightValue;
+			bufferData[13] = offsetValue;
+			bufferData[14] = worldSpaceValue;
+			bufferData[15] = modeValue;
+		}
 		return;
 	}
 
@@ -479,7 +503,7 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::setAttributes(const AtomsCore
 	if (!attributes)
 		return;
 
-	Atoms::Behaviour::setAttributes(attributes, blackboard);
+	AtomsBehaviourTreeXPUNode::setAttributes(attributes, blackboard);
 
 	//getBlackboardValueFromAttributes<AtomsCore::IntMetadata, int>(attributes, blackboard, "agentId", agentId);
 	Atoms::getBlackboardValueFromAttributes<AtomsCore::StringMetadata, std::string>(attributes, blackboard, "jointName", jointName);
@@ -498,8 +522,11 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::getAttributes(AtomsCore::MapM
 	if (!attributes)
 		return;
 
-	Atoms::Behaviour::getAttributes(attributes, blackboard);
-
+	AtomsBehaviourTreeXPUNode::getAttributes(attributes, blackboard);
+	/*
+	AtomsCore::IntMetadata agentIdMeta(agentId.value);
+	attributes->addEntry("agentId", &agentIdMeta);
+	*/
 	AtomsCore::StringMetadata jointNameMeta(jointName.value);
 	attributes->addEntry("jointName", &jointNameMeta);
 
@@ -533,7 +560,7 @@ void AtomsXpuExampleJointTransformTaskNodeWrapper::getAttributeProperties(AtomsC
 	if (!attributes)
 		return;
 
-	Atoms::Behaviour::getAttributeProperties(attributes);
+	Behaviour::getAttributeProperties(attributes);
 	auto parameters = attributes->getTypedEntry<AtomsCore::MapMetadata>(Atoms::GlobalNameKeys::ATOMS_BEHAVIOUR_TREE_NODE_PARAMETERS_KEY);
 
 	AtomsCore::StringMetadata description("Sets/Adds a transformation to a joint.<br/><br/><b>Success</b>: Never.<br/><br/><b>Failure</b>: When the transformation could not be applied.<br/><br/><b>Running</b>: When the transformation is applied.");

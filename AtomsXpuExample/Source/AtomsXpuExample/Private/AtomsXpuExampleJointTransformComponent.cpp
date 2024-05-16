@@ -14,11 +14,25 @@
 #include <AtomsCore/Metadata/IntMetadata.h>
 #include <AtomsCore/Metadata/BoolMetadata.h>
 #include <AtomsUtils/TaskScheduler.h>
+#include <Atoms/BehaviourModules.h>
+
+static const char* XpuExampleJointTransformXPUModuleName = "AtomsXpuExampleJointTransform";
+
+void UAtomsXpuExampleJointTransform_BehaviourComponent::RegisterBehaviourModule()
+{
+	Atoms::BehaviourModules::instance().registerBehaviourModule(XpuExampleJointTransformXPUModuleName, &AtomsXpuExampleJointTransformModule::creator, Atoms::BehaviourModules::kNative, true, "Unreal");
+}
+
+void UAtomsXpuExampleJointTransform_BehaviourComponent::UnRegisterBehaviourModule()
+{
+	Atoms::BehaviourModules::instance().deregisterBehaviourModule(XpuExampleJointTransformXPUModuleName);
+}
+
 
 
 UAtomsXpuExampleJointTransform_BehaviourComponent::UAtomsXpuExampleJointTransform_BehaviourComponent()
 {
-	AtomsBehaviourModule = "AtomsXpuExampleJointTransform";
+	AtomsBehaviourModule = XpuExampleJointTransformXPUModuleName;
 	jointName = "";
 	offset = true;
 	translate = FVector(0.0, 0.0, 0.0);
@@ -48,7 +62,7 @@ void UAtomsXpuExampleJointTransform_BehaviourComponent::OnBehaviourModuleCreated
 	if (!World)
 		return;
 
-	if (module->typeName() != "jointAlignXPU")
+	if (module->typeName() != XpuExampleJointTransformXPUModuleName)
 		return;
 
 	auto skelmodule = std::static_pointer_cast<AtomsXpuExampleJointTransformModule>(module);
@@ -80,6 +94,27 @@ void UAtomsXpuExampleJointTransform_BehaviourComponent::GetAtomsAttributes(Atoms
 	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_META_OVERRIDE(weight_override, weightOverride, AtomsCore::DoubleMetadata, );
 }
 
+void UAtomsXpuExampleJointTransform_BehaviourComponent::SetAtomsAttributes(std::shared_ptr<AtomsCore::MapMetadata>& attributes, std::shared_ptr<AtomsCore::MapMetadata>& hostData, FAtomsSceneAssets& sceneAssets)
+{
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(jointName, AtomsCore::StringMetadata, AtomsConverter::FromName);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(jointName_override, jointNameOverride, AtomsCore::StringMetadata, AtomsConverter::FromName);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(offset, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(offset_override, offsetOverride, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(translate, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(translate_override, translateOverride, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(rotate, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(rotate_override, rotateOverride, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(scale, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(scale_override, scaleOverride, AtomsCore::Vector3Metadata, AtomsConverter::FromVector3);
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(rotationOrder, AtomsCore::IntMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(rotationOrder_override, rotationOrderOverride, AtomsCore::IntMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(worldSpace, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(worldSpace_override, worldSpaceOverride, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(useOperator, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(useOperator_override, useOperatorOverride, AtomsCore::BoolMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META(weight, AtomsCore::DoubleMetadata, );
+	ATOMS_BEHAVIOUR_COMPONENT_CONVERT_PROPERTY_META_OVERRIDE(weight_override, weightOverride, AtomsCore::DoubleMetadata, );
+}
 
 void UAtomsXpuExampleJointTransform_BehaviourComponent::SetJointName(const FName& Value)
 {
@@ -286,6 +321,7 @@ AtomsCore::Euler::Order UAtomsXpuExampleJointTransform_BehaviourComponent::conve
 
 
 
+
 bool UAtomsXpuExampleJointTransform_BehaviourComponent::IsUsingGPUComputePose() const
 {
 	return true;
@@ -335,10 +371,15 @@ void UAtomsXpuExampleJointTransform_BehaviourComponent::UpdateGpuComputeData(
 				continue;
 			
 			auto JointId = agent->agentType()->skeleton().jointId(TCHAR_TO_UTF8(*jointName.ToString()));
-			FVector translationValue = translate;
-			FVector scaleValue = scale;
+			auto transOver = translateOverride.Find(agent->groupId()->get());
+			FVector translationValue = transOver ? *transOver : translate;
+			auto scaleOver = scaleOverride.Find(agent->groupId()->get());
+			FVector scaleValue = scaleOver ? *scaleOver : scale;
 
-			AtomsCore::Euler erotation(rotate.X * M_PI / 180.0, rotate.Z * M_PI / 180.0, rotate.Y * M_PI / 180.0, convertRotateOrderToEulerRot(rotationOrder));
+			auto rotateOver = rotateOverride.Find(agent->groupId()->get());
+			auto rotationValue = rotateOver ? *rotateOver : rotate;
+
+			AtomsCore::Euler erotation(rotationValue.X * M_PI / 180.0, rotationValue.Z * M_PI / 180.0, rotationValue.Y * M_PI / 180.0, convertRotateOrderToEulerRot(rotationOrder));
 			AtomsCore::Quaternion quatTmp = erotation.toQuat();
 
 			Data[DataOffset + 0] = agent->groupId()->value();

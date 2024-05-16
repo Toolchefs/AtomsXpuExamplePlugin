@@ -1,7 +1,11 @@
 #include "/Engine/Private/Common.ush"
 #include "/Plugins/AtomsUnreal/Private/AtomsGPUComputeUtils.ush"
 
+#if ATOMS_LINEAR_UAV
+RWBuffer<float> CurrentBoneMatrices;
+#else
 RWBuffer<float4> CurrentBoneMatrices;
+#endif
 Buffer<float4> BindInverseMatrices;
 Buffer<int> ParentBoneIndices;
 Buffer<float> TransformData;
@@ -11,7 +15,6 @@ uint NumBones;
 uint NumInstances;
 uint AgentOffset;
 uint TransformDataStride;
-uint SimulateOnlyActiveAgents;
 
 [numthreads(THREADGROUP_SIZE, 1, 1)]
 
@@ -27,12 +30,7 @@ void MainComputeShader
     
 	AgentID = AgentID + AgentOffset;
 
-    if (SimulateOnlyActiveAgents == 1 && IsAgentCulled(AgentsData, AgentID))
-    {
-        return;
-    }
-	
-	float4 translation = float4(0.0f, 0.0f, 0.0f, 1.0f); 
+	float4 translation = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	float4 rotation = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	float3 scale = float3(0.0f, 0.0f, 0.0f);
 	float weight = 0.0f;
@@ -46,7 +44,7 @@ void MainComputeShader
 
 	PoseId = uint(round(TransformData[TransformOffset]));
 
-	if (PoseId < 0)
+	if (PoseId < 0 || IsAgentCulled(AgentsData, PoseId))
 		return;
 
 	BoneId = uint(round(TransformData[TransformOffset + 1]));
@@ -90,7 +88,7 @@ void MainComputeShader
 
 		if (!offset)
 		{
-		    float4x4 zup = float4x4(
+			float4x4 zup = float4x4(
 				1.0f, 0.0f, 0.0f, 0.0f,
 				0.0f, 0.0f, -1.0f, 0.0f,
 				0.0f, 1.0f, 0.0f, 0.0f,
